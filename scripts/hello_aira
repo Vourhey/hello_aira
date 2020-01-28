@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import json
+
+# ROS
+import rospy
+from std_msgs.msg import String
+
+# Robonomics communication
+from robonomics_msgs.msg import Demand, Result
+from ethereum_common.srv import Accounts
+from ipfs_common.ipfs_rosbag import IpfsRosBag
+
+
+class HelloAIRA:
+
+    MODEL = "QmVCPhLcGi7GussfhrCxhSb1H5FrNyrM9uR6HuLgqgwawB"
+
+    def __init__(self):
+        rospy.init_node("hello_aira")
+        rospy.loginfo("Launching hello_aira node...")
+
+        rospy.loginfo("Model: {}".format(self.MODEL))
+
+        rospy.wait_for_service("/eth/current_block")
+        rospy.wait_for_service("/eth/accounts")
+        self.accounts = rospy.ServiceProxy("/eth/accounts", Accounts)()
+        rospy.loginfo(str(self.accounts))  # AIRA ethereum addresses
+        self.my_account = self.accounts.accounts[0].address
+
+        self.signing_result = rospy.Publisher("/liability/infochan/eth/signing/result", Result, queue_size=128)
+
+        rospy.Subscriber("/liability/infochan/incoming/demand", Demand, self.on_incoming_demand)
+
+        rospy.loginfo("The node is launched")
+        rospy.loginfo("Open dapp:\nhttps://dapp.robonomics.network/#/sensors/airalab/{}/{}/".format(self.MODEL, self.my_account))
+
+    def on_incoming_demand(self, incoming: Demand):
+        if incoming.model.multihash == self.MODEL:
+            rospy.loginfo("Hello Economy of robots world!")
+            self.send_result(incoming)
+
+    def send_result(self, incoming: Demand):
+        data = {
+                "string": "Hello Economy of robots world! Sent from {}".format(self.accounts.accounts[0].address)
+                }
+
+        topics = {
+                "/data": [ String(json.dumps(data)) ]
+                }
+
+        bag = IpfsRosBag(messages=topics)
+
+        result = Result()
+        result.liability = incoming.sender
+        result.result = bag.multihash
+        result.success = True
+
+        self.signing_result.publish(result)
+
+    def spin(self):
+        rospy.spin()
+
+
+if __name__ == "__main__":
+    HelloAIRA().spin()
